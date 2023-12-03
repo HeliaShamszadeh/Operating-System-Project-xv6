@@ -7,12 +7,29 @@
 #include "proc.h"
 #include "spinlock.h"
 
+void rotateLeft(struct proc** root);
+void rotateRight(struct proc** root);
+void flipColors(struct proc* node);
+struct proc* moveRedLeft(struct proc* node);
+struct proc* moveRedRight(struct proc* node);
+struct proc* fixUp(struct proc* node);
+struct proc* deleteMin(struct proc* node, struct proc** min_proc);
+void UpdateSigmaWeight(int *weight, int niceval, int statcode);
+int Compare(struct proc *node1, struct proc *node2);
+void ExtractMin(struct RBTREE *tree);
+void Insert(struct RBTREE *tree, struct proc* process, int vruntime, int niceval);
+struct proc *_insert(struct proc *root, struct proc *node);
+
+
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
 } ptable;
 
 static struct proc *initproc;
+
+static struct RBTREE *tree;
 
 int nextpid = 1;
 extern void forkret(void);
@@ -332,10 +349,10 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
-
+    while (1)
+    {
+      ExtractMin(tree);
+      p = tree->removed_proc;
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
@@ -348,6 +365,7 @@ scheduler(void)
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
+      Insert(tree, c->proc, c->proc->vruntime, c->proc->niceval);
       c->proc = 0;
     }
     release(&ptable.lock);
@@ -531,4 +549,131 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+
+
+
+
+void UpdateSigmaWeight(int *weight, int niceval, int statcode)
+{
+  if (statcode == 1)
+  {
+    *weight += prio_to_weight[niceval + 20];
+  }
+  else if (statcode == -1)
+  {
+    *weight -= prio_to_weight[niceval + 20];
+  }
+}
+
+
+// compare two rbtree proc nodes based on their vruntime
+int Compare(struct proc *node1, struct proc *node2)
+{
+  if (node1->vruntime < node2->vruntime)
+    return -1;
+  else if (node1->vruntime == node2->vruntime)
+    return 0;
+  else
+    return 1;
+}
+
+
+// Helper function to perform left rotation
+void rotateLeft(struct proc** root) {
+    struct proc* x = (*root)->right;
+    (*root)->right = x->left;
+    x->left = *root;
+    x->color = (*root)->color;
+    (*root)->color = RED;
+    *root = x;
+    
+}
+
+// Helper function to perform right rotation
+void rotateRight(struct proc** root) {
+    struct proc* x = (*root)->left;
+    (*root)->left = x->right;
+    x->right = *root;
+    x->color = (*root)->color;
+    (*root)->color = RED;
+    *root = x;
+}
+
+// Helper function to flip colors of a node and its children
+void flipColors(struct proc* node) {
+    node->color = !node->color;
+    node->left->color = !node->left->color;
+    node->right->color = !node->right->color;
+}
+
+// Move a red node to the left
+struct proc* moveRedLeft(struct proc* node) {
+    flipColors(node);
+    if (node->right != 0 && node->right->left != 0 && node->right->left->color == RED) {
+        rotateRight(&(node->right));
+        rotateLeft(&node);
+        flipColors(node);
+    }
+    return node;
+}
+
+// Fix the LLRB properties after deletion
+struct proc* fixUp(struct proc* node) {
+    if (node->right != 0 && node->right->color == RED) {
+        rotateLeft(&node);
+    }
+    if (node->left != 0 && node->left->color == RED && node->left->left != 0 && node->left->left->color == RED) {
+        rotateRight(&node);
+    }
+    if (node->left != 0 && node->left->color == RED && node->right != 0 && node->right->color == RED) {
+        flipColors(node);
+    }
+    return node;
+}
+
+// Delete the minimum key node
+struct proc* deleteMin(struct proc* node, struct proc** min_proc) {
+    if (node->left == 0) {
+        *min_proc = node;
+        return 0;
+    }
+    if (node->left->color == BLACK && (node->left->left == 0 || node->left->left->color == BLACK)) {
+        node = moveRedLeft(node);
+    }
+    node->left = deleteMin(node->left, min_proc);
+    return fixUp(node);
+}
+
+void ExtractMin(struct RBTREE *tree)
+{
+    deleteMin(tree->root, &tree->removed_proc);
+    UpdateSigmaWeight(&tree->TotalWeight, prio_to_weight[tree->removed_proc->niceval+20], -1);
+}
+
+
+void Insert(struct RBTREE *tree, struct proc* process, int vruntime, int niceval)
+{
+  tree->root = _insert(tree->root, process);
+  tree->root->color = BLACK;
+  UpdateSigmaWeight(&tree->TotalWeight, niceval, 1);
+}
+
+struct proc *_insert(struct proc *root, struct proc *node)
+{
+  if (root == 0)
+    return node;
+  if (Compare(root, node) <= 0)
+    root->left = _insert(root->left, node);
+  else
+    root->right = _insert(root->right, node);
+
+  if (root->right == RED && !root->left == RED)
+    rotateLeft(&root);
+  if (root->left == RED && root->left->left == RED)
+    rotateRight(&root);
+  if (root->left == RED && root->right == RED)
+    flipColors(root);;
+  return root;
 }
