@@ -634,3 +634,47 @@ struct proc *_insert(struct proc *root, struct proc *node)
     flipColors(root);;
   return root;
 }
+
+// Move a red node to the left
+struct proc* moveRedLeft(struct proc* node) {
+    flipColors(node);
+    if (node->right != 0 && node->right->left != 0 && node->right->left->color == RED) {
+        rotateRight(&(node->right));
+        rotateLeft(&node);
+        flipColors(node);
+    }
+    return node;
+}
+
+// Fix the LLRB properties after deletion
+struct proc* fixUp(struct proc* node) {
+    if (node->right != 0 && node->right->color == RED) {
+        rotateLeft(&node);
+    }
+    if (node->left != 0 && node->left->color == RED && node->left->left != 0 && node->left->left->color == RED) {
+        rotateRight(&node);
+    }
+    if (node->left != 0 && node->left->color == RED && node->right != 0 && node->right->color == RED) {
+        flipColors(node);
+    }
+    return node;
+}
+
+// Delete the minimum key node
+struct proc* deleteMin(struct proc* node, struct proc** min_proc) {
+    if (node->left == 0) {
+        *min_proc = node;
+        return 0;
+    }
+    if (node->left->color == BLACK && (node->left->left == 0 || node->left->left->color == BLACK)) {
+        node = moveRedLeft(node);
+    }
+    node->left = deleteMin(node->left, min_proc);
+    return fixUp(node);
+}
+
+void ExtractMin(struct RBTREE *tree)
+{
+    deleteMin(tree->root, &tree->removed_proc);
+    UpdateSigmaWeight(&tree->TotalWeight, prio_to_weight[tree->removed_proc->niceval+20], -1);
+}
